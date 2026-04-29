@@ -23,6 +23,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    email TEXT UNIQUE,
+    password TEXT,
     role TEXT NOT NULL -- 'admin' or 'evaluator'
   );
 
@@ -38,11 +40,31 @@ db.exec(`
     FOREIGN KEY (exam_id) REFERENCES exams(id),
     FOREIGN KEY (assigned_to) REFERENCES users(id)
   );
+`);
 
-  -- Insert default users for testing
-  INSERT OR IGNORE INTO users (id, name, role) VALUES ('admin1', 'Super Admin', 'admin');
-  INSERT OR IGNORE INTO users (id, name, role) VALUES ('eval1', 'John Doe', 'evaluator');
-  INSERT OR IGNORE INTO users (id, name, role) VALUES ('eval2', 'Jane Smith', 'evaluator');
+try {
+  db.exec("ALTER TABLE users ADD COLUMN email TEXT;");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
+} catch (e: any) {
+  if (!e.message.includes('duplicate column name')) {
+    console.error("Migration error (email):", e.message);
+  }
+}
+
+try {
+  db.exec("ALTER TABLE users ADD COLUMN password TEXT;");
+} catch (e: any) {
+  if (!e.message.includes('duplicate column name')) {
+    console.error("Migration error (password):", e.message);
+  }
+}
+
+db.exec(`
+  -- Ensure admin exists and has credentials
+  INSERT OR IGNORE INTO users (id, name, email, password, role) 
+  VALUES ('admin1', 'Super Admin', 'admin@evalit.com', 'adminpassword', 'admin');
+  
+  UPDATE users SET email = 'admin@evalit.com', password = 'adminpassword' WHERE id = 'admin1';
 `);
 
 async function startServer() {
@@ -52,11 +74,43 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
 
   // API Routes
-  
+
+  // Login
+  app.post("/api/login", (req, res) => {
+    const { email, password } = req.body;
+    const user = db.prepare("SELECT * FROM users WHERE email = ? AND password = ?").get(email, password);
+    if (!user) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    res.json(user);
+  });
+
   // Get all evaluators
   app.get("/api/evaluators", (req, res) => {
-    const evaluators = db.prepare("SELECT * FROM users WHERE role = 'evaluator'").all();
+    const evaluators = db.prepare("SELECT id, name, email, role FROM users WHERE role = 'evaluator'").all();
     res.json(evaluators);
+  });
+
+  // Create evaluators
+  app.post("/api/evaluators", (req, res) => {
+    const { evaluators } = req.body;
+    const insert = db.prepare("INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, 'evaluator')");
+
+    try {
+      const transaction = db.transaction((evalList) => {
+        for (const e of evalList) {
+          insert.run('eval_' + Math.random().toString(36).substr(2, 9), e.name, e.email, e.password);
+        }
+      });
+      transaction(evaluators);
+      res.json({ success: true });
+    } catch (error: any) {
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        res.status(400).json({ error: "One or more emails already exist." });
+      } else {
+        res.status(500).json({ error: "Failed to create evaluators" });
+      }
+    }
   });
 
   // Get all exams
@@ -92,12 +146,26 @@ async function startServer() {
     const papers = db.prepare("SELECT id FROM papers WHERE exam_id = ? AND assigned_to IS NULL").all(exam_id) as { id: string }[];
 
     if (evaluators.length === 0) return res.status(400).json({ error: "No evaluators available" });
+    if (papers.length === 0) return res.status(400).json({ error: "No unassigned papers available" });
+
+    const N = papers.length;
+    const M = evaluators.length;
+    const papersPerEvaluator = Math.floor(N / M);
+    const remaining = N % M;
 
     const transaction = db.transaction(() => {
-      papers.forEach((p, index) => {
-        const evalId = evaluators[index % evaluators.length].id;
-        db.prepare("UPDATE papers SET assigned_to = ? WHERE id = ?").run(evalId, p.id);
-      });
+      let paperIndex = 0;
+      for (let i = 0; i < M; i++) {
+        const evalId = evaluators[i].id;
+        const count = papersPerEvaluator + (i < remaining ? 1 : 0);
+
+        for (let j = 0; j < count; j++) {
+          if (paperIndex < N) {
+            db.prepare("UPDATE papers SET assigned_to = ? WHERE id = ?").run(evalId, papers[paperIndex].id);
+            paperIndex++;
+          }
+        }
+      }
     });
     transaction();
     res.json({ success: true });

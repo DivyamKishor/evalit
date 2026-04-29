@@ -1,6 +1,27 @@
 import { Exam, Paper, User } from "../types";
 
 export const api = {
+  login: async (credentials: any): Promise<User> => {
+    const res = await fetch("/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+    });
+    if (!res.ok) throw new Error("Login failed");
+    return res.json();
+  },
+  createEvaluators: async (evaluators: any[]) => {
+    const res = await fetch("/api/evaluators", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ evaluators }),
+    });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Failed to create evaluators");
+    }
+    return res.json();
+  },
   getEvaluators: async (): Promise<User[]> => {
     const res = await fetch("/api/evaluators");
     return res.json();

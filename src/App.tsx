@@ -8,30 +8,29 @@ import { User, UserRole, User as UserType } from './types';
 import { api } from './services/api';
 import AdminDashboard from './components/AdminDashboard';
 import EvaluatorDashboard from './components/EvaluatorDashboard';
-import { LogIn, GraduationCap, ShieldCheck, User as UserIcon } from 'lucide-react';
+import { LogIn, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function App() {
   const [user, setUser] = useState<UserType | null>(null);
-  const [allUsers, setAllUsers] = useState<UserType[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const evaluators = await api.getEvaluators();
-        const admins = [{ id: 'admin1', name: 'Super Admin', role: UserRole.ADMIN }];
-        setAllUsers([...admins, ...evaluators]);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    init();
-  }, []);
-
-  if (loading) return <div className="h-screen w-full flex items-center justify-center font-mono text-zinc-500">Initializing EvalIt...</div>;
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const u = await api.login({ email, password });
+      setUser(u);
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (!user) {
     return (
@@ -47,27 +46,41 @@ export default function App() {
             <p className="text-zinc-500 font-sans text-sm uppercase tracking-widest font-medium">Digital Evaluation Platform</p>
           </div>
 
-          <div className="bg-white border border-zinc-200 p-8 shadow-sm">
-            <h2 className="text-lg font-medium mb-6 text-zinc-800">Select Identity to Start</h2>
-            <div className="space-y-3">
-              {allUsers.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => setUser(u)}
-                  className="w-full text-left p-4 border border-zinc-100 hover:border-zinc-900 transition-all flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-3">
-                    {u.role === UserRole.ADMIN ? <ShieldCheck className="w-5 h-5 text-zinc-400" /> : <UserIcon className="w-5 h-5 text-zinc-400" />}
-                    <div>
-                      <div className="font-medium text-zinc-900">{u.name}</div>
-                      <div className="text-xs text-zinc-400 uppercase tracking-tighter">{u.role}</div>
-                    </div>
-                  </div>
-                  <LogIn className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
+          <form onSubmit={handleLogin} className="bg-white border border-zinc-200 p-8 shadow-sm">
+            <h2 className="text-lg font-medium mb-6 text-zinc-800">Secure Sign In</h2>
+            {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 border border-red-100">{error}</div>}
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Email</label>
+                <input 
+                  type="email" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full p-3 border border-zinc-200 focus:border-zinc-900 outline-none transition-colors"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Password</label>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-3 border border-zinc-200 focus:border-zinc-900 outline-none transition-colors"
+                  required
+                />
+              </div>
+              
+              <button 
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 mt-4 bg-zinc-900 text-white font-medium disabled:opacity-50 flex justify-center items-center gap-2 transition-colors hover:bg-zinc-800"
+              >
+                {loading ? 'Authenticating...' : <><LogIn className="w-4 h-4" /> Sign In</>}
+              </button>
             </div>
-          </div>
+          </form>
         </motion.div>
       </div>
     );

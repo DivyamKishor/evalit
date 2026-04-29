@@ -4,6 +4,65 @@ import { AnswerKeySection, SegmentedAnswer } from "../types";
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
 export const aiService = {
+  extractAnswerKey: async (pdfBase64: string): Promise<AnswerKeySection[]> => {
+    const model = "gemini-3-flash-preview";
+    const base64Data = pdfBase64.split(',')[1] || pdfBase64;
+    
+    const prompt = `
+      You are an expert academic assistant. You are given a document (PDF) which is an answer key.
+      
+      TASK:
+      1. Extract all questions and their corresponding expected answer points.
+      2. Identify the question number (e.g. Q1, Q2, 1, 2, etc.).
+      3. Extract the points for each question.
+      4. Determine the maximum marks for the question (default to 5 if not found).
+      
+      OUTPUT FORMAT:
+      Return a JSON array of AnswerKeySection objects:
+      [
+        {
+          "id": "random_string",
+          "questionNumber": "Q1",
+          "points": ["point 1", "point 2"],
+          "maxMarks": 5
+        }
+      ]
+
+      Important: ONLY return the JSON array. Do not include markdown formatting or explanations.
+    `;
+
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            parts: [
+              {
+                inlineData: {
+                  mimeType: "application/pdf",
+                  data: base64Data,
+                },
+              },
+              { text: prompt },
+            ],
+          },
+        ],
+        config: {
+          responseMimeType: "application/json",
+        }
+      });
+
+      const result = JSON.parse(response.text || "[]");
+      return result.map((r: any) => ({
+        ...r,
+        id: r.id || Math.random().toString(36).substr(2, 9)
+      }));
+    } catch (error) {
+      console.error("AI Error:", error);
+      throw error;
+    }
+  },
+
   processAnswerSheet: async (
     pdfBase64: string,
     answerKey: AnswerKeySection[]

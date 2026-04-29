@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { User, Exam, AnswerKeySection } from '../types';
 import { api } from '../services/api';
-import { Plus, FileText, Upload, Users, CheckCircle, ChevronRight, Trash2 } from 'lucide-react';
+import { Plus, FileText, Upload, Users, CheckCircle, ChevronRight, Trash2, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
+import { aiService } from '../services/ai';
 
 export default function AdminDashboard({ user }: { user: User }) {
   const [exams, setExams] = useState<Exam[]>([]);
@@ -10,6 +11,8 @@ export default function AdminDashboard({ user }: { user: User }) {
   const [newExamTitle, setNewExamTitle] = useState('');
   const [answerKey, setAnswerKey] = useState<AnswerKeySection[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showCreateEval, setShowCreateEval] = useState(false);
+  const [evaluatorsToCreate, setEvaluatorsToCreate] = useState([{ name: '', email: '', password: '' }]);
 
   useEffect(() => {
     loadExams();
@@ -20,14 +23,24 @@ export default function AdminDashboard({ user }: { user: User }) {
     setExams(data);
   };
 
-  const addQuestionToKey = () => {
-    const num = answerKey.length + 1;
-    setAnswerKey([...answerKey, { 
-      id: Math.random().toString(36).substr(2, 9),
-      questionNumber: `Q${num}`,
-      points: [''],
-      maxMarks: 5
-    }]);
+  const handleAnswerKeyUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoading(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      const extractedKey = await aiService.extractAnswerKey(base64);
+      setAnswerKey(extractedKey);
+      alert('Answer key extracted successfully!');
+    } catch (err) {
+      alert("Failed to extract answer key. Please check console for errors.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateExam = async () => {
@@ -46,6 +59,28 @@ export default function AdminDashboard({ user }: { user: User }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateEvaluators = async () => {
+    setLoading(true);
+    try {
+      await api.createEvaluators(evaluatorsToCreate);
+      alert('Evaluators created successfully');
+      setShowCreateEval(false);
+      setEvaluatorsToCreate([{ name: '', email: '', password: '' }]);
+    } catch (e: any) {
+      alert(e.message || 'Failed to create evaluators');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNumEvaluatorsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const num = Math.max(1, parseInt(e.target.value) || 1);
+    const current = [...evaluatorsToCreate];
+    while (current.length < num) current.push({ name: '', email: '', password: '' });
+    while (current.length > num) current.pop();
+    setEvaluatorsToCreate(current);
   };
 
   const handleBulkUpload = async (examId: string, files: FileList | null) => {
@@ -90,16 +125,94 @@ export default function AdminDashboard({ user }: { user: User }) {
           <h2 className="text-2xl font-serif italic">Administrator Overview</h2>
           <p className="text-zinc-500 text-sm">Manage exams, answer keys, and distribution</p>
         </div>
-        <button 
-          onClick={() => setShowCreate(!showCreate)}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-800 transition-colors"
-        >
-          {showCreate ? 'Discard' : <><Plus className="w-4 h-4" /> Create New Exam</>}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setShowCreateEval(!showCreateEval); setShowCreate(false); }}
+            className="flex items-center gap-2 px-4 py-2 border border-zinc-900 text-zinc-900 text-sm font-medium hover:bg-zinc-50 transition-colors"
+          >
+            {showCreateEval ? 'Discard' : <><UserPlus className="w-4 h-4" /> Create Evaluators</>}
+          </button>
+          <button
+            onClick={() => { setShowCreate(!showCreate); setShowCreateEval(false); }}
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 text-white text-sm font-medium hover:bg-zinc-800 transition-colors"
+          >
+            {showCreate ? 'Discard' : <><Plus className="w-4 h-4" /> Create New Exam</>}
+          </button>
+        </div>
       </div>
 
+      {showCreateEval && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white border border-zinc-200 p-8 shadow-sm"
+        >
+          <div className="max-w-3xl space-y-6">
+            <div>
+              <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Number of Evaluators</label>
+              <input
+                type="number"
+                min="1"
+                value={evaluatorsToCreate.length}
+                onChange={handleNumEvaluatorsChange}
+                className="w-32 p-3 border border-zinc-200 focus:border-zinc-900 outline-none transition-colors"
+              />
+            </div>
+
+            <div className="space-y-4">
+              {evaluatorsToCreate.map((evaluator, idx) => (
+                <div key={idx} className="p-4 bg-zinc-50 border border-zinc-100 flex gap-4 items-center">
+                  <div className="w-8 text-xs font-mono text-zinc-400">#{idx + 1}</div>
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={evaluator.name}
+                    onChange={(e) => {
+                      const updated = [...evaluatorsToCreate];
+                      updated[idx].name = e.target.value;
+                      setEvaluatorsToCreate(updated);
+                    }}
+                    className="flex-1 p-2 text-sm border border-zinc-200 focus:border-zinc-900 outline-none"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={evaluator.email}
+                    onChange={(e) => {
+                      const updated = [...evaluatorsToCreate];
+                      updated[idx].email = e.target.value;
+                      setEvaluatorsToCreate(updated);
+                    }}
+                    className="flex-1 p-2 text-sm border border-zinc-200 focus:border-zinc-900 outline-none"
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={evaluator.password}
+                    onChange={(e) => {
+                      const updated = [...evaluatorsToCreate];
+                      updated[idx].password = e.target.value;
+                      setEvaluatorsToCreate(updated);
+                    }}
+                    className="flex-1 p-2 text-sm border border-zinc-200 focus:border-zinc-900 outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={handleCreateEvaluators}
+              disabled={loading || evaluatorsToCreate.some(e => !e.name || !e.email || !e.password)}
+              className="w-full py-3 bg-zinc-900 text-white font-medium disabled:opacity-50"
+            >
+              {loading ? 'Creating...' : 'Save Evaluators to Database'}
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {showCreate && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-white border border-zinc-200 p-8 shadow-sm"
@@ -107,8 +220,8 @@ export default function AdminDashboard({ user }: { user: User }) {
           <div className="max-w-3xl space-y-6">
             <div>
               <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold mb-2">Exam Title</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={newExamTitle}
                 onChange={(e) => setNewExamTitle(e.target.value)}
                 placeholder="e.g. Mathematics Mid-Term 2024"
@@ -118,75 +231,34 @@ export default function AdminDashboard({ user }: { user: User }) {
 
             <div>
               <div className="flex justify-between items-center mb-4">
-                <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Answer Key Construction</label>
-                <button 
-                  onClick={addQuestionToKey}
-                  className="text-xs font-medium text-zinc-900 hover:underline"
-                >
-                  + Add Question
-                </button>
+                <label className="block text-[10px] uppercase tracking-widest text-zinc-400 font-bold">Answer Key Source</label>
               </div>
-              
-              <div className="space-y-4">
-                {answerKey.map((q, idx) => (
-                  <div key={q.id} className="p-4 bg-zinc-50 border border-zinc-100 flex gap-4">
-                    <div className="w-20">
-                      <input 
-                        type="text" 
-                        value={q.questionNumber}
-                        onChange={(e) => {
-                          const newKey = [...answerKey];
-                          newKey[idx].questionNumber = e.target.value;
-                          setAnswerKey(newKey);
-                        }}
-                        className="w-full p-2 text-sm font-bold border border-transparent focus:border-zinc-200 bg-transparent"
-                      />
-                    </div>
-                    <div className="flex-1 space-y-3">
-                      {q.points.map((p, pIdx) => (
-                        <input 
-                          key={pIdx}
-                          type="text"
-                          value={p}
-                          onChange={(e) => {
-                            const newKey = [...answerKey];
-                            newKey[idx].points[pIdx] = e.target.value;
-                            setAnswerKey(newKey);
-                          }}
-                          placeholder={`Key point ${pIdx + 1}`}
-                          className="w-full p-2 text-sm border border-zinc-200 focus:border-zinc-900 outline-none"
-                        />
-                      ))}
-                      <button 
-                        onClick={() => {
-                          const newKey = [...answerKey];
-                          newKey[idx].points.push('');
-                          setAnswerKey(newKey);
-                        }}
-                        className="text-[10px] uppercase font-bold text-zinc-400 hover:text-zinc-900 transition-colors"
-                      >
-                        + Add Point
-                      </button>
-                    </div>
-                    <div className="w-24">
-                      <label className="block text-[9px] uppercase text-zinc-400 mb-1">Max Marks</label>
-                      <input 
-                        type="number"
-                        value={q.maxMarks}
-                        onChange={(e) => {
-                          const newKey = [...answerKey];
-                          newKey[idx].maxMarks = parseInt(e.target.value);
-                          setAnswerKey(newKey);
-                        }}
-                        className="w-full p-2 text-sm border border-zinc-200"
-                      />
-                    </div>
-                  </div>
-                ))}
+
+              <div className="p-8 border-2 border-dashed border-zinc-200 bg-zinc-50 flex flex-col items-center justify-center gap-4">
+                <FileText className="w-8 h-8 text-zinc-300" />
+                <div className="text-center">
+                  <p className="text-sm font-medium text-zinc-700">Upload PDF or DOCX</p>
+                  <p className="text-xs text-zinc-500 mt-1">AI will automatically extract questions and marks</p>
+                </div>
+                <label className="px-4 py-2 bg-white border border-zinc-200 text-xs font-medium cursor-pointer hover:bg-zinc-50 transition-colors">
+                  Select File
+                  <input
+                    type="file"
+                    accept=".pdf,.docx"
+                    className="hidden"
+                    onChange={handleAnswerKeyUpload}
+                  />
+                </label>
               </div>
+
+              {answerKey.length > 0 && (
+                <div className="mt-4 p-4 bg-green-50 border border-green-100 text-sm text-green-800">
+                  <span className="font-bold">Success!</span> Extracted {answerKey.length} questions from the document.
+                </div>
+              )}
             </div>
 
-            <button 
+            <button
               onClick={handleCreateExam}
               disabled={loading || !newExamTitle}
               className="w-full py-3 bg-zinc-900 text-white font-medium disabled:opacity-50"
@@ -215,15 +287,15 @@ export default function AdminDashboard({ user }: { user: User }) {
               <label className="flex items-center justify-center gap-2 px-3 py-2 border border-zinc-200 text-xs font-medium cursor-pointer hover:bg-zinc-50">
                 <Upload className="w-3 h-3" />
                 Upload Papers
-                <input 
-                  type="file" 
-                  multiple 
+                <input
+                  type="file"
+                  multiple
                   accept=".pdf"
                   className="hidden"
                   onChange={(e) => handleBulkUpload(exam.id, e.target.files)}
                 />
               </label>
-              <button 
+              <button
                 onClick={() => handleDistribute(exam.id)}
                 className="flex items-center justify-center gap-2 px-3 py-2 bg-zinc-50 text-xs font-medium hover:bg-zinc-100"
               >
