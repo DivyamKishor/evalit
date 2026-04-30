@@ -241,7 +241,7 @@ export default function EvaluatorDashboard({ user }: { user: User }) {
                   {currentAnswer?.text ? (
                     <ReactMarkdown>{currentAnswer.text}</ReactMarkdown>
                   ) : (
-                    "No digitizable text found for this section."
+                    <span className="text-zinc-400 italic">Question not attempted.</span>
                   )}
                 </div>
               </div>

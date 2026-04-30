@@ -152,7 +152,11 @@ async function startServer() {
 
   // Get all exams
   app.get("/api/exams", (req, res) => {
-    const exams = db.prepare("SELECT * FROM exams ORDER BY created_at DESC").all();
+    const exams = db.prepare(`
+      SELECT e.*, (SELECT COUNT(*) FROM papers p WHERE p.exam_id = e.id) as paper_count 
+      FROM exams e 
+      ORDER BY e.created_at DESC
+    `).all();
     res.json(exams);
   });
 

@@ -152,6 +152,7 @@ export default function AdminDashboard({ user }: { user: User }) {
       );
       await api.uploadPapers(examId, papers);
       alert('Papers uploaded successfully');
+      loadData();
     } catch (e: any) {
       alert(e.message || 'Failed to upload papers');
     } finally {
@@ -426,9 +427,14 @@ export default function AdminDashboard({ user }: { user: User }) {
                 </div>
               </div>
               <h3 className="text-xl font-medium mb-1">{exam.title}</h3>
-              <p className="text-xs text-zinc-500 mb-6 uppercase tracking-widest">
-                {JSON.parse(exam.answer_key_json).length} Questions Configured
-              </p>
+              <div className="flex flex-col gap-1 mb-6">
+                <span className="text-xs text-zinc-500 uppercase tracking-widest">
+                  {JSON.parse(exam.answer_key_json).length} Questions
+                </span>
+                <span className="text-xs text-zinc-500 uppercase tracking-widest">
+                  {exam.paper_count || 0} Papers Uploaded
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3 pt-6 border-t border-zinc-50">
